@@ -4,11 +4,104 @@ import pandas as pd
 import numpy as np
 import streamlit as st
 import plotly.express as px
-import plotly.graph_objects as go
 
-# ==============================================================================
-# 1. PAGE CONFIGURATION & NAVIGATION
-# ==============================================================================
+# ---------------------------------------------------------
+# 🤖 OLLAMA & CHATBOT CONFIGURATION
+# ---------------------------------------------------------
+OLLAMA_MODEL = "gemma3:270m"
+OLLAMA_URL = "http://localhost:11434/api/chat"
+
+# Tailored System Prompt for Solar Dashboard
+SYSTEM_PROMPT = """
+You are "AQI AI", a friendly and concise AI assistant embedded in an India AQI Dashboard.
+
+Your role is to help users understand AQI data, cities, states, pollutants, charts, maps, rankings, and trends.
+
+Dashboard pages:
+- Home: AQI map, average AQI, cleanest/most polluted areas, monitoring stations.
+- AQI Analysis: state/area analysis, Sunburst chart, monitoring stations.
+- AQI Trends: monthly/yearly trends, state filters, AQI changes, polluted-state rankings.
+
+Use the provided dashboard dataset for numerical answers. Never invent data. If information is unavailable, say so clearly.
+
+AQI:
+0–50 Good
+51–100 Satisfactory
+101–200 Moderate
+201–300 Poor
+301–400 Very Poor
+401–500 Severe
+
+Answer in English, Hindi according to the user's language. Keep answers short, clear, friendly, and use emojis when appropriate.
+
+You can also answer questions about this project's Python, Pandas, NumPy, Plotly, Streamlit, Ollama, and Gemma 3 technologies.
+"""
+
+
+def query_ollama(messages):
+    """Sends chat messages to local Ollama instance."""
+    try:
+        response = requests.post(
+            OLLAMA_URL,
+            json={
+                "model": OLLAMA_MODEL,
+                "messages": messages,
+                "stream": False,
+            },
+            timeout=30,
+        )
+        if response.status_code == 200:
+            return response.json()["message"]["content"]
+        else:
+            return f"❌ Ollama Error ({response.status_code}). Please check if the model `{OLLAMA_MODEL}` is pulled."
+    except Exception as e:
+        return f"⚠️ Connection error. Please ensure Ollama is running (`ollama run {OLLAMA_MODEL}`)."
+
+
+# Chat Session State Initialization
+if "chat_messages" not in st.session_state:
+    st.session_state.chat_messages = [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {
+            "role": "assistant",
+            "content": "Hello! Ai Assistance",
+        },
+    ]
+
+
+# Global Header with Floating Chatbot Icon (Appears on ALL pages)
+top_col1, top_col2 = st.columns([0.85, 0.15])
+with top_col2:
+    with st.popover("💬 Chat AI", use_container_width=True):
+        st.subheader("🤖 Solar AI Assistant (`gemma3:270m`)")
+        st.caption("Powered by local Ollama model")
+
+        # Display Chat History (ignoring system prompt)
+        for msg in st.session_state.chat_messages:
+            if msg["role"] != "system":
+                with st.chat_message(msg["role"]):
+                    st.write(msg["content"])
+
+        # Chat Input Area
+        if prompt := st.chat_input("Puchiye solar energy ke baare me..."):
+            # Append User Message
+            st.session_state.chat_messages.append(
+                {"role": "user", "content": prompt}
+            )
+            with st.chat_message("user"):
+                st.write(prompt)
+
+            # Generate Ollama Response
+            with st.chat_message("assistant"):
+                with st.spinner("Thinking..."):
+                    response_text = query_ollama(st.session_state.chat_messages)
+                    st.write(response_text)
+
+            # Append Assistant Message
+            st.session_state.chat_messages.append(
+                {"role": "assistant", "content": response_text}
+            )
+
 st.set_page_config(
     page_title="India AQI Geographic Monitor",
     page_icon="🌫️",
@@ -17,6 +110,7 @@ st.set_page_config(
 )
 
 st.sidebar.title("🌍 AQI Analysis")
+
 
 page = st.sidebar.radio(
     "Navigation",
@@ -29,7 +123,6 @@ page = st.sidebar.radio(
 
 CSV_PATH = "data.csv"
 
-# Check and delete old schema file if it doesn't match the new custom columns
 if os.path.exists(CSV_PATH):
     try:
         temp_df = pd.read_csv(CSV_PATH)
